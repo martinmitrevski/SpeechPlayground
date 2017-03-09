@@ -89,7 +89,7 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate, UITableViewD
             cancelCalled = false
             checkExistingRecognitionTask()
             startAudioSession()
-            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            createRecognitionRequest()
             startRecording()
             recordingButton.setTitle("Stop Recording", for: .normal)
         }
@@ -113,20 +113,12 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate, UITableViewD
             return
         }
         
-        guard let recognitionRequest = recognitionRequest else {
-            showAudioError()
-            return
-        }
-        
-        recognitionRequest.shouldReportPartialResults = true
-        
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest,
-                                                           resultHandler:{ [unowned self] (result, error) in
-            var isFinal = false
-            var recognized: String?
-            self.sessionProducts = [String]()
-            self.deletedProducts = [String]()
+        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!,
+                                                           resultHandler:{
+                                                            [unowned self] (result, error) in
             
+            var recognized: String?
+            self.createProductsArraysForSession()
             if result != nil {
                 var shouldDelete = false
                 recognized = result?.bestTranscription.formattedString
@@ -135,11 +127,9 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate, UITableViewD
                     if self.removalWords.contains(text) {
                         shouldDelete = true
                     }
-                    
                     if self.checkStoppingWords(text: text) == true {
                         return
                     }
-                    
                     if self.products.contains(text) {
                         if (shouldDelete == false) {
                             self.sessionProducts.append(text)
@@ -150,28 +140,38 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate, UITableViewD
                     }
                 }
                 self.recognizedText.text = recognized
-                isFinal = (result?.isFinal)!
             }
             
-            if error != nil || isFinal {
+            var finishedRecording = false
+            if result != nil {
+                finishedRecording = result!.isFinal
+            }
+            if error != nil || finishedRecording {
                 inputNode.removeTap(onBus: 0)
                 self.handleFinishedRecording()
             }
         })
         
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { (buffer, when) in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) {
+            [unowned self] (buffer, when) in
             self.recognitionRequest?.append(buffer)
         }
-        
+        startAudioEngine()
+    }
+    
+    func createProductsArraysForSession() {
+        self.sessionProducts = [String]()
+        self.deletedProducts = [String]()
+    }
+    
+    func startAudioEngine() {
         audioEngine.prepare()
-        
         do {
             try audioEngine.start()
         } catch {
             showAudioError()
         }
-        
     }
     
     func handleFinishedRecording() {
@@ -211,6 +211,11 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate, UITableViewD
         } catch {
             showAudioError()
         }
+    }
+    
+    func createRecognitionRequest() {
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        recognitionRequest?.shouldReportPartialResults = true
     }
     
     func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
